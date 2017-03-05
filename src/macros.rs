@@ -283,7 +283,6 @@ macro_rules! service {
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
         pub enum tarpc_service_Request__ {
             NotIrrefutable(()),
             $(
@@ -296,7 +295,6 @@ macro_rules! service {
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
         pub enum tarpc_service_Response__ {
             NotIrrefutable(()),
             $(
@@ -411,7 +409,7 @@ macro_rules! service {
                         return tarpc_service_FutureReply__::DeserializeError(
                             $crate::futures::finished(
                                 ::std::result::Result::Err(
-                                    $crate::WireError::ServerSerialize(
+                                    $crate::WireError::RequestDeserialize(
                                         ::std::string::ToString::to_string(
                                             &tarpc_service_deserialize_err__)))));
                     }
@@ -643,11 +641,11 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerSerialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerSerialize(tarpc_service_err__)
+                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
                                     }
-                                    $crate::Error::ClientSerialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientSerialize(tarpc_service_err__)
+                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::Io(tarpc_service_error__) => {
                                         $crate::Error::Io(tarpc_service_error__)
@@ -674,16 +672,16 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         /// A future representing a client connecting to a server.
-        pub struct Connect<T> {
+        pub struct Connect {
             inner: $crate::futures::Map<$crate::future::client::ConnectFuture<
                                             tarpc_service_Request__,
                                             tarpc_service_Response__,
                                             tarpc_service_Error__>,
-                                        fn(tarpc_service_FutureClient__) -> T>,
+                                        fn(tarpc_service_FutureClient__) -> FutureClient>,
         }
 
-        impl<T> $crate::futures::Future for Connect<T> {
-            type Item = T;
+        impl $crate::futures::Future for Connect {
+            type Item = FutureClient;
             type Error = ::std::io::Error;
 
             fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
@@ -697,7 +695,7 @@ macro_rules! service {
         pub struct FutureClient(tarpc_service_FutureClient__);
 
         impl<'a> $crate::future::client::ClientExt for FutureClient {
-            type ConnectFut = Connect<Self>;
+            type ConnectFut = Connect;
 
             fn connect(tarpc_service_addr__: ::std::net::SocketAddr,
                                 tarpc_service_options__: $crate::future::client::Options)
@@ -755,11 +753,11 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerSerialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerSerialize(tarpc_service_err__)
+                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
                                     }
-                                    $crate::Error::ClientSerialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientSerialize(tarpc_service_err__)
+                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::Io(tarpc_service_error__) => {
                                         $crate::Error::Io(tarpc_service_error__)
@@ -876,17 +874,25 @@ mod functional_test {
                 } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
                     use native_tls_inner::backend::openssl::TlsConnectorBuilderExt;
 
-                    fn get_tls_client_options() -> client::Options {
+                    fn get_sync_tls_client_options() -> sync::client::Options {
+                        sync::client::Options::default()
+                            .tls(get_tls_client_context())
+                    }
+
+                    fn get_future_tls_client_options() -> future::client::Options {
+                        future::client::Options::default()
+                            .tls(get_tls_client_context())
+                    }
+
+                    fn get_tls_client_context() -> Context {
                         let mut connector = unwrap!(TlsConnector::builder());
                         unwrap!(connector.builder_mut()
                            .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
-
-                        client::Options::default()
-                            .tls(Context {
-                                domain: DOMAIN.into(),
-                                tls_connector: unwrap!(connector.build()),
-                            })
+                        Context {
+                            domain: DOMAIN.into(),
+                            tls_connector: unwrap!(connector.build()),
+                        }
                     }
                 // not implemented for windows or other platforms
                 } else {
@@ -1021,7 +1027,8 @@ mod functional_test {
                                          &reactor.handle(),
                                          options)?;
                 reactor.handle().spawn(server);
-                let client = unwrap!(reactor.run(C::connect(handle.addr(), get_future_client_options())));
+                let client = unwrap!(reactor.run(C::connect(handle.addr(),
+                                                            get_future_client_options())));
                 Ok((handle, reactor, client))
             }
 
@@ -1136,9 +1143,44 @@ mod functional_test {
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
                                                         Server>(Server));
             match client.foo().err().expect("failed unwrap") {
-                ::Error::ServerSerialize(_) => {} // good
-                bad => panic!("Expected Error::ServerSerialize but got {}", bad),
+                ::Error::RequestDeserialize(_) => {} // good
+                bad => panic!("Expected Error::RequestDeserialize but got {}", bad),
             }
+        }
+    }
+
+    mod bad_serialize {
+        use sync::{client, server};
+        use sync::client::ClientExt;
+        use serde::{Serialize, Serializer};
+        use serde::ser::SerializeSeq;
+
+        #[derive(Deserialize)]
+        pub struct Bad;
+
+        impl Serialize for Bad {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+                where S: Serializer
+            {
+                serializer.serialize_seq(None)?.end()
+            }
+        }
+
+        service! {
+            rpc bad(bad: Bad) | ();
+        }
+
+        impl SyncService for () {
+            fn bad(&self, _: Bad) -> Result<(), ()> {
+                Ok(())
+            }
+        }
+
+        #[test]
+        fn bad_serialize() {
+            let handle = ().listen("localhost:0", server::Options::default()).unwrap();
+            let client = SyncClient::connect(handle.addr(), client::Options::default()).unwrap();
+            client.bad(Bad).err().unwrap();
         }
     }
 
@@ -1221,8 +1263,8 @@ mod functional_test {
                 unwrap!(start_server_with_async_client::<super::other_service::FutureClient,
                                                          Server>(Server));
             match reactor.run(client.foo()).err().unwrap() {
-                ::Error::ServerSerialize(_) => {} // good
-                bad => panic!(r#"Expected Error::ServerSerialize but got "{}""#, bad),
+                ::Error::RequestDeserialize(_) => {} // good
+                bad => panic!(r#"Expected Error::RequestDeserialize but got "{}""#, bad),
             }
         }
 
