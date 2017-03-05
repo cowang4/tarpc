@@ -61,19 +61,11 @@ enum Reactor {
 }
 
 #[doc(hidden)]
-pub struct Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
-{
-    inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
+pub struct Client<Req, Resp, E> {
+    inner: ClientService<Req, WireResponse<Resp, E>>,
 }
 
-impl<Req, Resp, E> Clone for Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
-{
+impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
     fn clone(&self) -> Self {
         Client { inner: self.inner.clone() }
     }
@@ -101,11 +93,7 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
     }
 }
 
-impl<Req, Resp, E> Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
-{
+impl<Req, Resp, E> Client<Req, Resp, E> {
     fn bind(handle: &reactor::Handle, tcp: StreamType) -> Self
         where Req: Serialize + Sync + Send + 'static,
               Resp: Deserialize + Sync + Send + 'static,
@@ -122,11 +110,7 @@ impl<Req, Resp, E> Client<Req, Resp, E>
     }
 }
 
-impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
-{
+impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Client {{ .. }}")
     }
@@ -208,7 +192,7 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
 
 type ResponseFuture<Req, Resp, E> =
     futures::AndThen<futures::MapErr<
-    futures::Map<<ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
+    futures::Map<<ClientService<Req, WireResponse<Resp, E>> as Service>::Future,
                  fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>,
         fn(io::Error) -> ::Error<E>>,
                  Result<Resp, ::Error<E>>,

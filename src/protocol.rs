@@ -3,9 +3,10 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {serde, tokio_core};
+use tokio_core;
 use bincode::{self, SizeLimit};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use serde::{Serialize, Deserialize};
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem;
@@ -35,8 +36,8 @@ impl<Encode, Decode> Codec<Encode, Decode> {
 }
 
 impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
-    where Encode: serde::Serialize,
-          Decode: serde::Deserialize
+    where Encode: Serialize,
+          Decode: Deserialize
 {
     type Out = (RequestId, Encode);
     type In = (RequestId, Result<Decode, bincode::Error>);
@@ -115,8 +116,8 @@ impl<Encode, Decode> Proto<Encode, Decode> {
 
 impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
     where T: Io + 'static,
-          Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Encode: Serialize + 'static,
+          Decode: Deserialize + 'static
 {
     type Response = Encode;
     type Request = Result<Decode, bincode::Error>;
@@ -130,8 +131,8 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
 
 impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
     where T: Io + 'static,
-          Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Encode: Serialize + 'static,
+          Decode: Deserialize + 'static
 {
     type Response = Result<Decode, bincode::Error>;
     type Request = Encode;
