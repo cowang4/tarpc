@@ -1,7 +1,6 @@
-
+use futures::{self, Future, Stream};
 use future::client::{Client as FutureClient, ClientExt as FutureClientExt,
                      Options as FutureOptions};
-/// Exposes a trait for connecting synchronously to servers.
 use futures::{Future, Stream};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -33,11 +32,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
     }
 }
 
-impl<Req, Resp, E> Client<Req, Resp, E>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
-{
+impl<Req, Resp, E> Client<Req, Resp, E> {
     /// Drives an RPC call for the given request.
     pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
         self.proxy.call(request).wait()
