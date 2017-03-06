@@ -3,8 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {bincode, net2};
-use errors::WireError;
+use net2;
 use futures::{Future, Poll, Stream, future as futures, stream};
 use futures::sync::{mpsc, oneshot};
 use futures::unsync;
@@ -43,8 +42,8 @@ impl Handle {
                                    handle: &reactor::Handle,
                                    options: Options)
                                    -> io::Result<(Self, Listen<S, Req, Resp, E>)>
-        where S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
+        where S: NewService<Request = Req,
+                            Response = Result<Resp, E>,
                             Error = io::Error> + 'static,
               Req: Deserialize + 'static,
               Resp: Serialize + 'static,
@@ -159,10 +158,6 @@ impl Options {
         self
     }
 }
-
-/// A message from server to client.
-#[doc(hidden)]
-pub type Response<T, E> = Result<T, WireError<E>>;
 
 /// A hook to shut down a running server.
 #[derive(Clone)]
@@ -464,8 +459,8 @@ type BindStream<S> = stream::ForEach<AcceptStream,
 /// The future representing a running server.
 #[doc(hidden)]
 pub struct Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+    where S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
@@ -478,8 +473,8 @@ pub struct Listen<S, Req, Resp, E>
 }
 
 impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+    where S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
@@ -499,8 +494,8 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
                                 handle: &reactor::Handle,
                                 acceptor: Acceptor)
                                 -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp, E>)>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+    where S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
@@ -537,26 +532,10 @@ struct Bind<S> {
     new_service: S,
 }
 
-impl<S, Req, Resp, E> Bind<S>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    fn bind<I>(&self, socket: I) -> io::Result<()>
-        where I: Io + 'static
-    {
-        Proto::new().bind_server(&self.handle, socket, self.new_service.new_service()?);
-        Ok(())
-    }
-}
-
 impl<I, S, Req, Resp, E> FnOnce<(I,)> for Bind<S>
     where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+          S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
@@ -564,36 +543,37 @@ impl<I, S, Req, Resp, E> FnOnce<(I,)> for Bind<S>
 {
     type Output = io::Result<()>;
 
-    extern "rust-call" fn call_once(self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
+    extern "rust-call" fn call_once(self, socket: (I,)) -> io::Result<()> {
+        self.call(socket)
     }
 }
 
 impl<I, S, Req, Resp, E> FnMut<(I,)> for Bind<S>
     where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+          S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    extern "rust-call" fn call_mut(&mut self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
+    extern "rust-call" fn call_mut(&mut self, socket: (I,)) -> io::Result<()> {
+        self.call(socket)
     }
 }
 
 impl<I, S, Req, Resp, E> Fn<(I,)> for Bind<S>
     where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
+          S: NewService<Request = Req,
+                        Response = Result<Resp, E>,
                         Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
     extern "rust-call" fn call(&self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
+        Proto::new().bind_server(&self.handle, socket, self.new_service.new_service()?);
+        Ok(())
     }
 }
 

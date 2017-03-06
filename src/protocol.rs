@@ -20,6 +20,7 @@ pub struct Codec<Encode, Decode> {
     _phantom_data: PhantomData<(Encode, Decode)>,
 }
 
+#[derive(Debug)]
 enum CodecState {
     Id,
     Len { id: u64 },
@@ -40,7 +41,7 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
           Decode: Deserialize
 {
     type Out = (RequestId, Encode);
-    type In = (RequestId, Result<Decode, bincode::Error>);
+    type In = (RequestId, Decode);
 
     fn encode(&mut self, (id, message): Self::Out, buf: &mut Vec<u8>) -> io::Result<()> {
         buf.write_u64::<BigEndian>(id).unwrap();
@@ -54,11 +55,12 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
         Ok(())
     }
 
-    fn decode(&mut self, buf: &mut EasyBuf) -> Result<Option<Self::In>, io::Error> {
+    fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<Self::In>> {
         use self::CodecState::*;
         trace!("Codec::decode: {:?}", buf.as_slice());
 
         loop {
+            trace!("--> state: {:?}", self.state);
             match self.state {
                 Id if buf.len() < mem::size_of::<u64>() => {
                     trace!("--> Buf len is {}; waiting for 8 to parse id.", buf.len());
@@ -67,24 +69,24 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
                 Id => {
                     let mut id_buf = buf.drain_to(mem::size_of::<u64>());
                     let id = Cursor::new(&mut id_buf).read_u64::<BigEndian>()?;
-                    trace!("--> Parsed id = {} from {:?}", id, id_buf.as_slice());
+                    trace!("  --> Parsed id = {} from {:?}", id, id_buf.as_slice());
                     self.state = Len { id: id };
                 }
                 Len { .. } if buf.len() < mem::size_of::<u64>() => {
-                    trace!("--> Buf len is {}; waiting for 8 to parse packet length.",
+                    trace!("  --> Buf len is {}; waiting for 8 to parse packet length.",
                            buf.len());
                     return Ok(None);
                 }
                 Len { id } => {
                     let len_buf = buf.drain_to(mem::size_of::<u64>());
                     let len = Cursor::new(len_buf).read_u64::<BigEndian>()?;
-                    trace!("--> Parsed payload length = {}, remaining buffer length = {}",
+                    trace!("  --> Parsed payload length = {}, remaining buffer length = {}",
                            len,
                            buf.len());
                     self.state = Payload { id: id, len: len };
                 }
                 Payload { len, .. } if buf.len() < len as usize => {
-                    trace!("--> Buf len is {}; waiting for {} to parse payload.",
+                    trace!("  --> Buf len is {}; waiting for {} to parse payload.",
                            buf.len(),
                            len);
                     return Ok(None);
@@ -92,7 +94,11 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
                 Payload { id, len } => {
                     let payload = buf.drain_to(len as usize);
                     let result = bincode::deserialize_from(&mut Cursor::new(payload),
-                                                           SizeLimit::Infinite);
+                                                           SizeLimit::Infinite)
+                    .map_err(|serialize_err| {
+                        info!("Failed to deserialize request: {}", serialize_err);
+                        io::Error::new(io::ErrorKind::Other, serialize_err)
+                    })?;
                     // Reset the state machine because, either way, we're done processing this
                     // message.
                     self.state = Id;
@@ -120,9 +126,9 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
           Decode: Deserialize + 'static
 {
     type Response = Encode;
-    type Request = Result<Decode, bincode::Error>;
+    type Request = Decode;
     type Transport = Framed<T, Codec<Encode, Decode>>;
-    type BindTransport = Result<Self::Transport, io::Error>;
+    type BindTransport = io::Result<Self::Transport>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
         Ok(io.framed(Codec::new()))
@@ -134,10 +140,10 @@ impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
           Encode: Serialize + 'static,
           Decode: Deserialize + 'static
 {
-    type Response = Result<Decode, bincode::Error>;
+    type Response = Decode;
     type Request = Encode;
     type Transport = Framed<T, Codec<Encode, Decode>>;
-    type BindTransport = Result<Self::Transport, io::Error>;
+    type BindTransport = io::Result<Self::Transport>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
         Ok(io.framed(Codec::new()))
@@ -157,11 +163,11 @@ fn serialize() {
         let mut codec: Codec<(char, char, char), (char, char, char)> = Codec::new();
         codec.encode(MSG, &mut vec).unwrap();
         buf.get_mut().append(&mut vec);
-        let actual: Result<Option<(u64, Result<(char, char, char), bincode::Error>)>, io::Error> =
+        let actual: io::Result<Option<(u64, (char, char, char))>> =
             codec.decode(&mut buf);
 
         match actual {
-            Ok(Some((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}
+            Ok(Some((id, ref v))) if id == MSG.0 && *v == MSG.1 => {}
             bad => panic!("Expected {:?}, but got {:?}", Some(MSG), bad),
         }
 

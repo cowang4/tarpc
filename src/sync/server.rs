@@ -1,5 +1,5 @@
-use {bincode, future};
-use future::server::{Response, Shutdown};
+use future;
+use future::server::Shutdown;
 use futures::Future;
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -38,8 +38,8 @@ impl Handle {
                                    addr: SocketAddr,
                                    options: Options)
                                    -> io::Result<Self>
-        where S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
+        where S: NewService<Request = Req,
+                            Response = Result<Resp, E>,
                             Error = io::Error> + 'static,
               Req: Deserialize + 'static,
               Resp: Serialize + 'static,

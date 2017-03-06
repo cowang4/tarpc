@@ -3,8 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {REMOTE, bincode};
-use future::server::Response;
+use REMOTE;
 use futures::{self, Future, future};
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
@@ -62,7 +61,7 @@ enum Reactor {
 
 #[doc(hidden)]
 pub struct Client<Req, Resp, E> {
-    inner: ClientService<Req, WireResponse<Resp, E>>,
+    inner: ClientService<Req, Result<Resp, E>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
@@ -103,10 +102,8 @@ impl<Req, Resp, E> Client<Req, Resp, E> {
         Client { inner }
     }
 
-    fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
-        resp.map(|r| r.map_err(::Error::from))
-            .map_err(::Error::ResponseDeserialize)
-            .and_then(|r| r)
+    fn map_err(resp: Result<Resp, E>) -> Result<Resp, ::Error<E>> {
+        resp.map_err(::Error::App)
     }
 }
 
@@ -194,10 +191,8 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
 
 type ResponseFuture<Req, Resp, E> =
     futures::AndThen<futures::MapErr<
-    futures::Map<<ClientService<Req, WireResponse<Resp, E>> as Service>::Future,
-                 fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>,
+    futures::Map<<ClientService<Req, Result<Resp, E>> as Service>::Future,
+                 fn(Result<Resp, E>) -> Result<Resp, ::Error<E>>>,
         fn(io::Error) -> ::Error<E>>,
                  Result<Resp, ::Error<E>>,
                  fn(Result<Resp, ::Error<E>>) -> Result<Resp, ::Error<E>>>;
-
-type WireResponse<R, E> = Result<Response<R, E>, bincode::Error>;

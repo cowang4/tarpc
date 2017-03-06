@@ -349,13 +349,12 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         type tarpc_service_Future__ =
-            $crate::futures::Finished<$crate::future::server::Response<tarpc_service_Response__,
+            $crate::futures::Finished<::std::result::Result<tarpc_service_Response__,
                                                        tarpc_service_Error__>,
                                       ::std::io::Error>;
 
         #[allow(non_camel_case_types)]
         enum tarpc_service_FutureReply__<tarpc_service_S__: FutureService> {
-            DeserializeError(tarpc_service_Future__),
             $($fn_name(
                     $crate::futures::Then<
                         <ty_snake_to_camel!(tarpc_service_S__::$fn_name)
@@ -366,18 +365,13 @@ macro_rules! service {
         }
 
         impl<S: FutureService> $crate::futures::Future for tarpc_service_FutureReply__<S> {
-            type Item = $crate::future::server::Response<tarpc_service_Response__,
+            type Item = ::std::result::Result<tarpc_service_Response__,
                                                  tarpc_service_Error__>;
 
             type Error = ::std::io::Error;
 
             fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                 match *self {
-                    tarpc_service_FutureReply__::DeserializeError(
-                        ref mut tarpc_service_future__) =>
-                    {
-                        $crate::futures::Future::poll(tarpc_service_future__)
-                    }
                     $(
                         tarpc_service_FutureReply__::$fn_name(
                             ref mut tarpc_service_future__) =>
@@ -395,25 +389,13 @@ macro_rules! service {
             for tarpc_service_AsyncServer__<tarpc_service_S__>
             where tarpc_service_S__: FutureService
         {
-            type Request = ::std::result::Result<tarpc_service_Request__,
-                                                 $crate::bincode::Error>;
-            type Response = $crate::future::server::Response<tarpc_service_Response__,
+            type Request = tarpc_service_Request__;
+            type Response = ::std::result::Result<tarpc_service_Response__,
                                              tarpc_service_Error__>;
             type Error = ::std::io::Error;
             type Future = tarpc_service_FutureReply__<tarpc_service_S__>;
 
             fn call(&self, tarpc_service_request__: Self::Request) -> Self::Future {
-                let tarpc_service_request__ = match tarpc_service_request__ {
-                    Ok(tarpc_service_request__) => tarpc_service_request__,
-                    Err(tarpc_service_deserialize_err__) => {
-                        return tarpc_service_FutureReply__::DeserializeError(
-                            $crate::futures::finished(
-                                ::std::result::Result::Err(
-                                    $crate::WireError::RequestDeserialize(
-                                        ::std::string::ToString::to_string(
-                                            &tarpc_service_deserialize_err__)))));
-                    }
-                };
                 match tarpc_service_request__ {
                     tarpc_service_Request__::NotIrrefutable(()) => unreachable!(),
                     $(
@@ -427,11 +409,8 @@ macro_rules! service {
                                     tarpc_service_response__
                                         .map(tarpc_service_Response__::$fn_name)
                                         .map_err(|tarpc_service_error__| {
-                                            $crate::WireError::App(
-                                                tarpc_service_Error__::$fn_name(
-                                                    tarpc_service_error__))
-                                        })
-                                )
+                                            tarpc_service_Error__::$fn_name(tarpc_service_error__)
+                                        }))
                             }
                             return tarpc_service_FutureReply__::$fn_name(
                                 $crate::futures::Future::then(
@@ -641,12 +620,6 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::Io(tarpc_service_error__) => {
                                         $crate::Error::Io(tarpc_service_error__)
                                     }
@@ -752,12 +725,6 @@ macro_rules! service {
                                         } else {
                                             unreachable!()
                                         }
-                                    }
-                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::Io(tarpc_service_error__) => {
                                         $crate::Error::Io(tarpc_service_error__)
@@ -1147,10 +1114,7 @@ mod functional_test {
             let (_, client, _) =
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
                                                         Server>(Server));
-            match client.foo().err().expect("failed unwrap") {
-                ::Error::RequestDeserialize(_) => {} // good
-                bad => panic!("Expected Error::RequestDeserialize but got {}", bad),
-            }
+            client.foo().err().unwrap();
         }
     }
 
@@ -1267,10 +1231,7 @@ mod functional_test {
             let (_, mut reactor, client) =
                 unwrap!(start_server_with_async_client::<super::other_service::FutureClient,
                                                          Server>(Server));
-            match reactor.run(client.foo()).err().unwrap() {
-                ::Error::RequestDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::RequestDeserialize but got "{}""#, bad),
-            }
+            reactor.run(client.foo()).err().unwrap();
         }
 
         #[test]
