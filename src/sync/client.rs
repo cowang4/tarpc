@@ -1,4 +1,3 @@
-use futures::{self, Future, Stream};
 use future::client::{Client as FutureClient, ClientExt as FutureClientExt,
                      Options as FutureOptions};
 use futures::{Future, Stream};
