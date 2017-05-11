@@ -17,7 +17,8 @@ use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_proto::BindServer;
-use tokio_service::NewService;
+use tokio_service::{Service, NewService};
+use util::Ctx;
 
 mod connection;
 mod shutdown;
@@ -31,6 +32,41 @@ cfg_if! {
 }
 
 pub use self::shutdown::{Shutdown, ShutdownFuture};
+
+/// A task-local context set for inbound RPCs.
+pub mod ctx {
+    use serde::Serialize;
+    use serde::de::DeserializeOwned;
+    use std::borrow::Borrow;
+    use std::hash::Hash;
+    use util::Ctx;
+
+    task_local! {
+        static CTX: Ctx = Ctx::default()
+    }
+
+    /// Sets the contents of the task-local Ctx, returning the old contents.
+    pub fn replace(other: Ctx) -> Ctx {
+        CTX.with(|ctx| ctx.replace(other))
+    }
+
+    /// Get a thread-local value keyed on `k`.
+    /// Returns `None` if the `k` isn't in the server task-local context,
+    /// or if it can't be deserialized to type `T`.
+    pub fn get<Q: ?Sized, T: DeserializeOwned>(k: &Q) -> Option<T>
+        where String: Borrow<Q>,
+              Q: Hash + Eq
+    {
+        CTX.with(|ctx| ctx.get(k))
+    }
+
+    /// Inserts a (key, value) pair `(k, v)` into the server task-local context.
+    /// Returns `Err` if `v` can't be serialized, `Ok(Some(v))` if there was a previous value
+    /// associated with `k`, and `Ok(None)` otherwise.
+    pub fn insert<K: Into<String>, T: Serialize>(k: K, v: T) -> Option<Vec<u8>> {
+        CTX.with(|ctx| ctx.insert(k, v))
+    }
+}
 
 /// A handle to a bound server.
 #[derive(Clone, Debug)]
@@ -258,6 +294,32 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
         server))
 }
 
+struct ContextService<S> {
+    inner: S,
+}
+
+impl<S: Service, Req> Service for ContextService<S>
+    where S: Service<Request = Result<Req, bincode::Error>>
+{
+    type Request = Result<(Ctx, Req), bincode::Error>;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn call(&self, req: Self::Request) -> Self::Future {
+        match req {
+            Ok((ctx, req)) => {
+                self::ctx::replace(ctx);
+                self.inner.call(Ok(req))
+            }
+            Err(e) => {
+                self::ctx::replace(Ctx::default());
+                self.inner.call(Err(e))
+            }
+        }
+    }
+}
+
 /// Spawns a service that binds to the given address using the given handle.
 fn listen_with<S, Req, Resp, E>(new_service: S,
                                 addr: SocketAddr,
@@ -356,11 +418,14 @@ impl<S, Req, Resp, E, I, St> BindStream<S, St>
 {
     fn bind_each(&mut self) -> Poll<(), io::Error> {
         loop {
-            match try!(self.stream.poll()) {
+            match self.stream.poll()? {
                 Async::Ready(Some(socket)) => {
                     Proto::new(self.max_payload_size).bind_server(&self.handle,
                                                                   socket,
-                                                                  self.new_service.new_service()?);
+                                                                  ContextService {
+                                                                      inner: self.new_service
+                                                                          .new_service()?,
+                                                                  });
                 }
                 Async::Ready(None) => return Ok(Async::Ready(())),
                 Async::NotReady => return Ok(Async::NotReady),

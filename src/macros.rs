@@ -1155,6 +1155,62 @@ mod functional_test {
                        reactor.run(client.hey("Tim".to_string())).unwrap());
         }
 
+        #[derive(Clone)]
+        struct CtxServer {
+            expected_key: String,
+            expected_value: String,
+        }
+
+        impl FutureService for CtxServer {
+            type AddFut = Result<i32, Never>;
+            type HeyFut = Result<String, Never>;
+
+            fn add(&self, _: i32, _: i32) -> Result<i32, Never> {
+                use future::server;
+
+                let x: i32 = server::ctx::get("x").unwrap();
+                let y: i32 = server::ctx::get("y").unwrap();
+                Ok(x + y)
+            }
+
+            fn hey(&self, _: String) -> Result<String, Never> {
+                use future::server;
+
+                let name: String = server::ctx::get("name").unwrap();
+                Ok(format!("Hey, {}.", name))
+            }
+        }
+
+        #[test]
+        fn ctx() {
+            let _ = env_logger::init();
+            use future::client;
+
+            let expected_key = "key".to_string();
+            let expected_value = "value".to_string();
+
+            let (_, mut reactor, client) = unwrap!(
+                start_server_with_async_client::<FutureClient, CtxServer>(CtxServer {
+                    expected_key: expected_key.clone(),
+                    expected_value: expected_value.clone(),
+                })
+            );
+
+            // Wrapped in a lazy future because the task local ctx is only available...on a task.
+            let request = ::futures::lazy(|| {
+                                              client::ctx::insert("x", 1);
+                                              client::ctx::insert("y", 2);
+                                              client.add(-1, -1)
+                                          });
+            assert_eq!(3, reactor.run(request).unwrap());
+
+            let request = ::futures::lazy(|| {
+                                              client::ctx::insert("name", "Tim");
+                                              client.hey("".to_string())
+                                          });
+            assert_eq!("Hey, Tim.", reactor.run(request).unwrap());
+        }
+
         #[test]
         fn shutdown() {
             use futures::Future;

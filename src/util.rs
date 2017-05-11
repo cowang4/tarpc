@@ -3,12 +3,51 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use bincode::{self, Infinite};
 use futures::{Future, IntoFuture, Poll};
 use futures::stream::Stream;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::de::DeserializeOwned;
 use std::{fmt, io, mem};
+use std::borrow::Borrow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
+use std::hash::Hash;
 use std::net::{SocketAddr, ToSocketAddrs};
+
+/** A map of task-local metadata, useful for storing cross-cutting RPC context. */
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct Ctx {
+    inner: RefCell<HashMap<String, Vec<u8>>>,
+}
+
+impl Ctx {
+    /// Sets the contents of self, returning the old contents.
+    pub fn replace(&self, other: Self) -> Self {
+        ::std::mem::swap(&mut *self.inner.borrow_mut(),
+                         &mut *other.inner.borrow_mut());
+        other
+    }
+
+    /// Gets the value associated with key `k`.
+    pub fn get<Q: ?Sized, T: DeserializeOwned>(&self, k: &Q) -> Option<T>
+        where String: Borrow<Q>,
+              Q: Hash + Eq
+    {
+        self.inner
+            .borrow()
+            .get(k)
+            .map(|v| bincode::deserialize(&v))
+            .and_then(Result::ok)
+    }
+
+    /// Inserts the key-value pair `(k, v)`.
+    pub fn insert<K: Into<String>, T: Serialize>(&self, k: K, v: T) -> Option<Vec<u8>> {
+        let serialized = bincode::serialize(&v, Infinite).unwrap();
+        self.inner.borrow_mut().insert(k.into(), serialized)
+    }
+}
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.

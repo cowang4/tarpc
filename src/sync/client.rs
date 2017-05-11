@@ -134,9 +134,9 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
         let (connect_tx, connect_rx) = mpsc::channel();
         thread::spawn(move || match RequestHandler::connect(addr, options) {
                           Ok((proxy, mut handler)) => {
-            connect_tx.send(Ok(proxy)).unwrap();
-            handler.handle_requests();
-        }
+                              connect_tx.send(Ok(proxy)).unwrap();
+                              handler.handle_requests();
+                          }
                           Err(e) => connect_tx.send(Err(e)).unwrap(),
                       });
         Ok(connect_rx.recv().unwrap()?)
@@ -164,11 +164,11 @@ impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
         let options = (reactor.handle(), options).into();
         let client = reactor.run(FutureClient::connect(addr, options))?;
         let (proxy, requests) = pair();
-        Ok((Client { proxy },
+        Ok((Client { proxy: proxy },
             RequestHandler {
-                reactor,
-                client,
-                requests,
+                reactor: reactor,
+                client: client,
+                requests: requests,
             }))
     }
 }
@@ -187,27 +187,28 @@ impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
             ref mut client,
         } = *self;
         let handle = reactor.handle();
-        let requests =
-            requests
-                .map(|result| {
-                    match result {
-                        Ok(req) => req,
-                        // The ClientProxy never sends Err currently
-                        Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
-                    }
-                })
-                .for_each(|(request, response_tx)| {
-                    let request = client.call(request)
+        let requests = requests
+            .map(|result| {
+                     match result {
+                         Ok(req) => req,
+                         // The ClientProxy never sends Err currently
+                         Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
+                     }
+                 })
+            .for_each(|(request, response_tx)| {
+                let request = client
+                    .call(request)
                     .then(move |response| {
-                        // Safe to unwrap because clients always block on the response future.
-                        response_tx.send(response)
-                            .map_err(|_| ())
-                            .expect("Client should block on response");
-                        Ok(())
-                      });
-                    handle.spawn(request);
-                    Ok(())
-                });
+                              // Safe to unwrap because clients always block on the response future.
+                              response_tx
+                                  .send(response)
+                                  .map_err(|_| ())
+                                  .expect("Client should block on response");
+                              Ok(())
+                          });
+                handle.spawn(request);
+                Ok(())
+            });
         reactor.run(requests).unwrap();
     }
 }
@@ -232,9 +233,9 @@ fn handle_requests() {
     let reactor = reactor::Core::new().unwrap();
     let client = Client;
     let mut request_handler = RequestHandler {
-        reactor,
-        client,
-        requests,
+        reactor: reactor,
+        client: client,
+        requests: requests,
     };
     // Test that `handle_requests` returns when all request senders are dropped.
     drop(request);

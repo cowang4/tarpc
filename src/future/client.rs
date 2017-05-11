@@ -18,6 +18,7 @@ use tokio_core::reactor;
 use tokio_proto::BindClient as ProtoBindClient;
 use tokio_proto::multiplex::ClientService;
 use tokio_service::Service;
+use util::Ctx;
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
@@ -25,6 +26,41 @@ cfg_if! {
         use tls::client::Context;
         use tokio_tls::TlsConnectorExt;
     } else {}
+}
+
+/// A task-local context sent in outbound RPCs.
+pub mod ctx {
+    use serde::Serialize;
+    use serde::de::DeserializeOwned;
+    use std::borrow::Borrow;
+    use std::hash::Hash;
+    use util::Ctx;
+
+    task_local! {
+        static CTX: Ctx = Ctx::default()
+    }
+
+    /// Clone the task-local ctx.
+    pub fn clone() -> Ctx {
+        CTX.with(|ctx| ctx.clone())
+    }
+
+    /// Get a thread-local value keyed on `k`.
+    /// Returns `None` if the `k` isn't in the client task-local context,
+    /// or if it can't be deserialized to type `T`.
+    pub fn get<Q: ?Sized, T: DeserializeOwned>(k: &Q) -> Option<T>
+        where String: Borrow<Q>,
+              Q: Hash + Eq
+    {
+        CTX.with(|ctx| ctx.get(k))
+    }
+
+    /// Inserts a (key, value) pair `(k, v)` into the client task-local context.
+    /// Returns `Err` if `v` can't be serialized, `Ok(Some(v))` if there was a previous value
+    /// associated with `k`, and `Ok(None)` otherwise.
+    pub fn insert<K: Into<String>, T: Serialize>(k: K, v: T) -> Option<Vec<u8>> {
+        CTX.with(|ctx| ctx.insert(k, v))
+    }
 }
 
 /// Additional options to configure how the client connects and operates.
@@ -107,7 +143,7 @@ pub struct Client<Req, Resp, E>
           Resp: DeserializeOwned + 'static,
           E: DeserializeOwned + 'static
 {
-    inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
+    inner: ClientService<StreamType, Proto<(Ctx, Req), Response<Resp, E>>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E>
@@ -135,7 +171,7 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
             t
         }
         self.inner
-            .call(request)
+            .call((self::ctx::clone(), request))
             .map(Self::map_err as _)
             .map_err(::Error::from as _)
             .and_then(identity as _)
@@ -153,7 +189,7 @@ impl<Req, Resp, E> Client<Req, Resp, E>
               E: DeserializeOwned + Send + 'static
     {
         let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
-        Client { inner }
+        Client { inner: inner }
     }
 
     fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
@@ -255,7 +291,9 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
 
 type ResponseFuture<Req, Resp, E> =
     futures::AndThen<futures::MapErr<
-    futures::Map<<ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
+    futures::Map<<ClientService<StreamType,
+                                Proto<(Ctx, Req), Response<Resp, E>>>
+                                as Service>::Future,
                  fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>,
         fn(io::Error) -> ::Error<E>>,
                  Result<Resp, ::Error<E>>,

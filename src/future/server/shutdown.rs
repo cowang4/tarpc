@@ -82,10 +82,10 @@ impl Watcher {
     fn poll_shutdown_requests(&mut self) -> Poll<Option<()>, ()> {
         Ok(Async::Ready(match try_ready!(self.shutdown_rx.poll()) {
                             Some(tx) => {
-            debug!("Received shutdown request.");
-            self.shutdown = Some(tx);
-            Some(())
-        }
+                                debug!("Received shutdown request.");
+                                self.shutdown = Some(tx);
+                                Some(())
+                            }
                             None => None,
                         }))
     }
@@ -93,9 +93,9 @@ impl Watcher {
     fn poll_connections(&mut self) -> Poll<Option<()>, ()> {
         Ok(Async::Ready(match try_ready!(self.connections.poll()) {
                             Some(action) => {
-            self.process_connection(action);
-            Some(())
-        }
+                                self.process_connection(action);
+                                Some(())
+                            }
                             None => None,
                         }))
     }

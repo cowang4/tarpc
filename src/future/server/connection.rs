@@ -16,7 +16,7 @@ pub struct Tracker {
 impl Tracker {
     pub fn pair() -> (Self, unsync::mpsc::UnboundedReceiver<Action>) {
         let (tx, rx) = unsync::mpsc::unbounded();
-        (Self { tx }, rx)
+        (Self { tx: tx }, rx)
     }
 
     pub fn increment(&self) {

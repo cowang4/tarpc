@@ -115,7 +115,7 @@
 //! ```
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(never_type)]
+#![feature(never_type, conservative_impl_trait)]
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 

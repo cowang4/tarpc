@@ -162,9 +162,9 @@ impl<S> NewThreadService<S>
     fn new(new_service: S, pool: thread_pool::Builder) -> Self {
         let (sender, _pool) = pool.build();
         NewThreadService {
-            new_service,
-            sender,
-            _pool,
+            new_service: new_service,
+            sender: sender,
+            _pool: _pool,
         }
     }
 }
