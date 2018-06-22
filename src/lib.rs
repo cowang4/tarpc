@@ -27,8 +27,7 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(plugin, use_extern_macros)]
-//! #![plugin(tarpc_plugins)]
+//! #![feature(proc_macro, use_extern_macros, proc_macro_path_invoc, proc_macro_non_items)]
 //!
 //! #[macro_use]
 //! extern crate tarpc;
@@ -71,8 +70,7 @@
 //! Example usage with TLS:
 //!
 //! ```no-run
-//! #![feature(plugin, use_extern_macros)]
-//! #![plugin(tarpc_plugins)]
+//! #![feature(proc_macro, use_extern_macros, proc_macro_path_invoc, proc_macro_non_items)]
 //!
 //! #[macro_use]
 //! extern crate tarpc;
@@ -115,9 +113,8 @@
 //! ```
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(never_type)]
-#![cfg_attr(test, feature(plugin, use_extern_macros))]
-#![cfg_attr(test, plugin(tarpc_plugins))]
+#![feature(never_type, proc_macro)]
+#![cfg_attr(test, feature(proc_macro_path_invoc, proc_macro_non_items))]
 
 extern crate byteorder;
 extern crate bytes;
@@ -148,6 +145,11 @@ pub extern crate tokio_core;
 pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
+#[macro_use]
+#[allow(unused_imports)]
+extern crate tarpc_plugins;
+#[doc(hidden)]
+pub use self::tarpc_plugins::*;
 
 pub use errors::Error;
 #[doc(hidden)]

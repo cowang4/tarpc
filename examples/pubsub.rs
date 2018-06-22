@@ -3,13 +3,13 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, use_extern_macros)]
-#![plugin(tarpc_plugins)]
+#![feature(proc_macro, proc_macro_path_invoc, proc_macro_non_items)]
 
 extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
+extern crate tarpc_plugins;
 extern crate tokio_core;
 
 use futures::{Future, future};

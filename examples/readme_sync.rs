@@ -4,8 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 // required by `FutureClient` (not used directly in this example)
-#![feature(plugin, use_extern_macros)]
-#![plugin(tarpc_plugins)]
+#![feature(use_extern_macros, proc_macro_path_invoc, proc_macro_non_items)]
 
 #[macro_use]
 extern crate tarpc;

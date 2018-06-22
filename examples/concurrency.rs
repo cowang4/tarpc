@@ -3,8 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, never_type, use_extern_macros)]
-#![plugin(tarpc_plugins)]
+#![feature(never_type, use_extern_macros, proc_macro_path_invoc, proc_macro_non_items)]
 
 extern crate chrono;
 extern crate clap;

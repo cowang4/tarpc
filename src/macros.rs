@@ -9,13 +9,23 @@ macro_rules! as_item {
     ($i:item) => {$i};
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! _snake_to_camel {
+    (type $i:ident = $t:ty;) => {
+        ::tarpc_plugins::impl_snake_to_camel!(type $i = $t;);
+    };
+    (#[$attr:meta] type $f:ident: $t:ty;) => {
+        ::tarpc_plugins::snake_to_camel!(#[$attr] type $f: $t;);
+    };
+}
+
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin, use_extern_macros)]
-/// # #![plugin(tarpc_plugins)]
+/// # #![feature(use_extern_macros, proc_macro_path_invoc)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -177,13 +187,13 @@ macro_rules! service {
             'static
         {
             $(
-                snake_to_camel! {
+                _snake_to_camel! {
                     /// The type of future returned by `{}`.
                     type $fn_name: $crate::futures::IntoFuture<Item=$out, Error=$error>;
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -208,7 +218,7 @@ macro_rules! service {
             DeserializeError(ResponseFuture__),
             $($fn_name(
                     $crate::futures::Then<
-                        <ty_snake_to_camel!(S__::$fn_name) as $crate::futures::IntoFuture>::Future,
+                        <$crate::ty_snake_to_camel!(S__::$fn_name) as $crate::futures::IntoFuture>::Future,
                         ResponseFuture__,
                         fn(::std::result::Result<$out, $error>) -> ResponseFuture__>)),*
         }
@@ -366,7 +376,7 @@ macro_rules! service {
                 struct BlockingFutureService<S>(S);
                 impl<S: SyncService> FutureService for BlockingFutureService<S> {
                     $(
-                        impl_snake_to_camel! {
+                        _snake_to_camel! {
                             type $fn_name =
                                 $crate::util::Lazy<
                                     fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>,
