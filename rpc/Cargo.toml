@@ -20,6 +20,7 @@ rand = "0.5"
 tokio-timer = "0.2"
 trace = { path = "../trace" }
 serde = { optional = true, version = "1.0" }
+execution-context = "0.1"
 
 [target.'cfg(not(test))'.dependencies]
 futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }

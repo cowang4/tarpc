@@ -9,6 +9,11 @@
 use std::time::{Duration, SystemTime};
 use trace::{self, TraceId};
 
+execution_context::flow_local!(static CONTEXT: Context = Context {
+    deadline: SystemTime::now() + Duration::from_secs(10),
+    trace_context: trace::Context::new_root(),
+});
+
 /// A request context that carries request-scoped information like deadlines and trace information.
 /// It is sent from client to server and is used by the server to enforce response deadlines.
 ///
@@ -30,10 +35,11 @@ pub struct Context {
 /// Returns the context for the current request, or a default Context if no request is active.
 // TODO: populate Context with request-scoped data, with default fallbacks.
 pub fn current() -> Context {
-    Context {
-        deadline: SystemTime::now() + Duration::from_secs(10),
-        trace_context: trace::Context::new_root(),
-    }
+    *CONTEXT.get()
+}
+
+pub(crate) fn set(ctx: Context) {
+    CONTEXT.set(ctx)
 }
 
 impl Context {

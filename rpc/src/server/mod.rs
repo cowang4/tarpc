@@ -1,7 +1,7 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context::Context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
+    context::{self, Context}, util::{context_propagating, deadline_compat}, util::AsDuration, util::Compact, ClientMessage,
     ClientMessageKind, Request, Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
@@ -127,7 +127,7 @@ where
                     let peer = channel.client_addr;
                     if let Err(e) = cx
                         .spawner()
-                        .spawn(channel.respond_with(self.request_handler().clone()))
+                        .spawn(context_propagating(channel.respond_with(self.request_handler().clone())))
                     {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
@@ -423,6 +423,7 @@ where
             deadline: request.deadline,
             trace_context,
         };
+        context::set(ctx);
         let request = request.message;
 
         if self.in_flight_requests().len()
@@ -458,7 +459,7 @@ where
         let mut response_tx = self.responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f()(ctx.clone(), request);
+        let response = self.f()(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = Response {
@@ -474,7 +475,7 @@ where
         );
         let (abortable_response, abort_handle) = abortable(response);
         cx.spawner()
-            .spawn(abortable_response.map(|_| ()))
+            .spawn(context_propagating(abortable_response.map(|_| ())))
             .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::Other,

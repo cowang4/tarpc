@@ -1,8 +1,11 @@
 use std::{
     collections::HashMap,
     hash::{BuildHasher, Hash},
+    pin::PinMut,
     time::{Duration, SystemTime},
 };
+use execution_context::ExecutionContext;
+use futures::{Future, Poll, task};
 
 pub mod deadline_compat;
 #[cfg(feature = "serde")]
@@ -38,4 +41,60 @@ where
             self.shrink_to_fit();
         }
     }
+}
+
+/// Returns a future that executes within the scope of the current [ExecutionContext].
+pub fn context_propagating<F: Future>(future: F) -> impl Future<Output = F::Output> {
+    ContextFuture {
+        future,
+        context: ExecutionContext::capture(),
+    }
+}
+
+/// A future that executes within a specific [ExecutionContext].
+struct ContextFuture<F> {
+    future: F,
+    context: ExecutionContext,
+}
+
+impl<F> Future for ContextFuture<F>
+    where
+        F: Future,
+{
+    type Output = F::Output;
+
+    fn poll(self: PinMut<Self>, cx: &mut task::Context) -> Poll<F::Output> {
+        let me = unsafe { PinMut::get_mut_unchecked(self) };
+        let future = unsafe { PinMut::new_unchecked(&mut me.future) };
+        me.context.run(|| future.poll(cx))
+    }
+}
+
+#[test]
+fn propagate() {
+    use crate::context::{self, Context};
+    let ctx = Context {
+        deadline: SystemTime::UNIX_EPOCH + Duration::from_secs(5),
+        trace_context: trace::Context::new_root(),
+    };
+    context::set(ctx);
+    let propagate = context_propagating(async {
+        context::current()
+    });
+    let no_propagate = async {
+        context::current()
+    };
+    let new_ctx = Context {
+        deadline: SystemTime::UNIX_EPOCH,
+        trace_context: trace::Context::new_root(),
+    };
+    context::set(new_ctx);
+
+    let ctx2 = futures::executor::block_on(propagate);
+    assert!(ctx.deadline == ctx2.deadline);
+    assert!(ctx.trace_context == ctx2.trace_context);
+
+    let ctx2 = futures::executor::block_on(no_propagate);
+    assert!(new_ctx.deadline == ctx2.deadline);
+    assert!(new_ctx.trace_context == ctx2.trace_context);
 }

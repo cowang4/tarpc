@@ -1,6 +1,6 @@
 use crate::{
     context,
-    util::{deadline_compat, AsDuration, Compact},
+    util::{deadline_compat, context_propagating, AsDuration, Compact},
     ClientMessage, ClientMessageKind, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
@@ -206,14 +206,14 @@ where
     let (cancellation, canceled_requests) = cancellations();
 
     spawn!(
-        RequestDispatch {
+        context_propagating(RequestDispatch {
             config,
             server_addr,
             canceled_requests,
             transport: transport.fuse(),
             in_flight_requests: FnvHashMap::default(),
             pending_requests: pending_requests.fuse(),
-        }.unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e))
+        }.unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e)))
     );
 
     Channel {
